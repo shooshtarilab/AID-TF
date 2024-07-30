@@ -22,15 +22,15 @@ My_Theme = theme(
   strip.text.y = element_text(size = 10, angle = 0))
 
 #The address of the final dataframe comprising all results
-whole_frame_dir = "~/rprojects/results/imm_res_back/temp/new_generated_res/final_dataframe.txt"
+whole_frame_dir = "~/rprojects/review_data/results/new_generated_res_test/final_dataframe_humna.txt"
 whole_frame = read.table(whole_frame_dir,sep = "\t", header = TRUE)
 
 #The file comprising motif names
-motif_tf_dir = "~/rprojects/motif_list/motif_name.txt"
+motif_tf_dir = "~/rprojects/review_data/results/new_generated_res_test/motif_list/motif_name_new.txt"
 motif_tf_data = read.table(motif_tf_dir, header = TRUE)
 
 #The main directory of results
-main = paste0("~/rprojects/results/imm_res_back/temp/new_generated_res_test/")
+main = paste0("~/rprojects/review_data/results/new_generated_res_test/")
 dir.create(main)
 
 #List of traits
@@ -49,10 +49,12 @@ final_data_freq = list()
 for (i in c(1:length(trait_list))){
   plot_obj = c()
   print(i)
+  
+  #The directory of the trait of interest
   main_dir = paste0(main,trait_list[i],"/")
   
   #The file having trait-specific results
-  direct = paste0(main_dir,"final_total_list.txt")
+  direct = paste0(main_dir,"human_tf_table.txt")
   
   data = read.table(direct, sep = "\t", header = TRUE)
   
@@ -64,10 +66,15 @@ for (i in c(1:length(trait_list))){
   show_list = c()
   
   for (j in c(1:length(motif_list))){
-    tf_temp = data[data$motif == motif_list[j],]$TF
+    tf_temp = unique(data[data$motif == motif_list[j],]$TF)
+    if (length(tf_temp)>1){
+      tf_temp = paste(tf_temp, collapse = ",")
+    }else{
+      tf_temp = tf_temp
+    }
     samplefreq_temp = data[data$motif == motif_list[j],]$sample_frequency
     cellfreq_temp = data[data$motif == motif_list[j],]$cell_frequency
-    show_temp = paste0(tf_temp[1],"(",motif_list[j],")")
+    show_temp = paste0(tf_temp,"(",motif_list[j],")")
     show_list = append(show_list,show_temp)
     sample_freq = append(sample_freq,samplefreq_temp[1])
     cell_freq = append(cell_freq,cellfreq_temp[1])
@@ -149,7 +156,7 @@ plot_obj = list()
 heat_obj = list()
 
 #The address of the final dataframe comprising all results
-data_list_dir = "~/rprojects/results/imm_res_back/temp/new_generated_res/final_dataframe.txt"
+data_list_dir = "~/rprojects/review_data/results/new_generated_res_test/final_dataframe_humna.txt"
 
 data_list = read.table(data_list_dir, sep = "\t", header = TRUE)
 motif_list = unique(data_list$motif)
@@ -166,9 +173,10 @@ final_trait_num = c()
 for (i in c(1:length(trait_list))){
 #for (i in c(1:1)){ 
   print(i)
+  #The directory of the trait of interest
   main_dir = paste0(main,trait_list[i],"/")
   
-  direct = paste0(main_dir,"final_total_list.txt")
+  direct = paste0(main_dir,"human_tf_table.txt")
   
   data = read.table(direct, sep = "\t", header = TRUE)
   
@@ -192,15 +200,22 @@ for (i in c(1:length(trait_list))){
     }
 
   }
-  
+  motif_cell_index = rowSums(heat_matrix)>0
+  heat_matrix_org = heat_matrix
+  heat_matrix = as.matrix(heat_matrix[motif_cell_index,])
   show_list = c()
   for (j in c(1:length(motif_list))){
-    tf_temp = data_list[data_list$motif == motif_list[j],]$TF
-    show_temp = paste0(tf_temp[1]," (",motif_list[j],")")
+    tf_temp = unique(data_list[data_list$motif == motif_list[j],]$TF)
+    if(length(tf_temp)>1){
+      tf_temp = paste(tf_temp, collapse = ",")
+    }
+    show_temp = paste0(tf_temp," (",motif_list[j],")")
     show_list = append(show_list,show_temp)
     
   }
-  show_list = str_remove(show_list,"^/")
+  #colnames(heat_matrix_org) = sample_list
+  rownames(heat_matrix_org) = show_list
+  show_list = str_remove(show_list,"^/")[motif_cell_index]
   colnames(heat_matrix) = sample_list
   rownames(heat_matrix) = show_list
   data_plot = melt(heat_matrix)
@@ -306,6 +321,7 @@ for (i in c(1:length(trait_list))){
   #rownames(heat_matrix) = c()
   colnames(heat_matrix) = c()
   
+  
   final_trait_num = append(final_trait_num,ncol(heat_matrix))
   heat_obj[[i]] = Heatmap(heat_matrix, top_annotation = ha, column_order = c(1:length(sample_list)),
                         row_order = c(1:nrow(heat_matrix)),
@@ -332,7 +348,7 @@ for (i in c(1:length(trait_list))){
   #while((as.numeric(Sys.time()) - as.numeric(date_time))<5){}
   dev.off()
   
-  final_matrix[[i]] = heat_matrix
+  final_matrix[[i]] = heat_matrix_org
   final_trait = append(final_trait, rep(trait_list[i],ncol(heat_matrix)))
   final_celltype = append(final_celltype, df$cell_type)
   

@@ -8,184 +8,173 @@ library(EnvStats)
 library(hrbrthemes)
 library(stringr)
 library(ggpubr)
-theme_set(theme_pubr())
+library(tidyverse)
+library(ComplexHeatmap)
+library(circlize)
 
-My_Theme = theme(
-  axis.title.x = element_text(size = 10, hjust = 0.5),
-  axis.title.y = element_text(size = 10, hjust = 0.5))
+#Directory of the full table comprising all results
+final_table_dir = "~/rprojects/review_data/results/new_generated_res_test/final_dataframe_humna.txt"
+final_table = read.table(file = final_table_dir, sep = "\t",
+                         header = TRUE)
 
-#Address of the final dataframe having all results
-data_dir = "~/rprojects/results/imm_res_back/temp/new_generated_res/final_dataframe.txt"
-data = read.table(data_dir, sep = "\t", header = TRUE)
+df_cell = unique(final_table[,c("cell_type","trait")])
 
-trait_list = unique(data$trait)
-#List of traits
-trait_list = trait_list = c("ATD","CEL","PBC","IBD","JIA","MS","PSO","RA","T1D")
-motif_list = list()
+# Calculate the common cell types between diseases
+disease_cell_type <- df_cell %>%
+  group_by(trait) %>%
+  summarize(cell_types = list(cell_type)) %>%
+  ungroup()
 
-#Getting the list of all affected motifs
-for (i in c(1:length(trait_list))){
-  motif_temp = data[data$trait == trait_list[i],]$motif
-  motif_temp = unique(motif_temp)
-  motif_list[[i]] = motif_temp
-}
+# Create a matrix to store the names of common cell types
+disease_names <- unique(df_cell$trait)
+common_matrix <- matrix("", nrow = length(disease_names), ncol = length(disease_names))
+rownames(common_matrix) <- disease_names
+colnames(common_matrix) <- disease_names
 
-heat_matrix = matrix(0L ,nrow = length(trait_list), ncol = length(trait_list))
+# Matrix to store the counts of common cell types
+count_matrix <- matrix(0, nrow = length(disease_names), ncol = length(disease_names))
+rownames(count_matrix) <- disease_names
+colnames(count_matrix) <- disease_names
 
-for (m in c(1:length(trait_list))){
-  for (n in c(1:length(trait_list))){
-    if (m == n){
-      heat_matrix[m,n] = 0
-    }else{
-      heat_matrix[m,n] = length(intersect(motif_list[[m]],motif_list[[n]]))    
+for (i in 1:length(disease_names)) {
+  for (j in 1:length(disease_names)) {
+    if (i < j) {
+      cell_types_i <- unlist(disease_cell_type$cell_types[disease_cell_type$trait == disease_names[i]])
+      cell_types_j <- unlist(disease_cell_type$cell_types[disease_cell_type$trait == disease_names[j]])
+      common_cell_types <- intersect(cell_types_i, cell_types_j)
+      common_matrix[i, j] <- paste(common_cell_types, collapse = "\n")
+      common_matrix[j, i] <- common_matrix[i, j]
+      count_matrix[i, j] <- length(common_cell_types)
+      count_matrix[j, i] <- length(common_cell_types)
     }
   }
-  
 }
 
-rownames(heat_matrix) = trait_list
-colnames(heat_matrix) = trait_list
-
-data_plot = melt(heat_matrix)
-names(data_plot) = c("trait1","trait2","overlap_number")
-
-plot_o = ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of Common Motifs")+
-  #scale_fill_gradient(low="white", high="red")+
-  scale_x_discrete(guide = guide_axis(angle = 90))+
-  scale_fill_discrete(name = "Number of Overlapping Motifs")+
-  scale_fill_gradientn(breaks = c(0,1,2),colours = c("light blue","dark blue"))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
-
-save_file =  "~/rprojects/results/imm_res_back/temp/new_generated_res/traitvstrait_motif.tiff"
-
-file.remove(save_file)
-
-#Generating the figure showing the number of common affected motifs 
-#between traits (Figure 4.A) 
-ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of Common Motifs")+
-  #scale_fill_gradient(low="white", high="red")+
-  #scale_fill_continuous(breaks = c(0,1,2))+
-  scale_fill_gradient(low = "#c6dbef",high = "#08306b",guide = "colorbar",breaks = c(2,1,0))+
-  
-  guides(fill=guide_legend(title='Number of Overlapping Motifs'))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
-
-ggsave(save_file,dpi = 1000)
 
 
+# Replace empty strings with NA for better visualization
+common_matrix[common_matrix == ""] <- NA
 
-sample_list = list()
+# Create a color function for the heatmap
+col_fun <- colorRamp2(c(0, max(count_matrix)), c("white", "red"))
 
-for (i in c(1:length(trait_list))){
-  sample_temp = data[data$trait == trait_list[i],]$sample_type
-  sample_temp = unique(sample_temp)
-  sample_list[[i]] = sample_temp
-}
-#sample_list[[2]] = character(0)
-heat_matrix = matrix(0L ,nrow = length(trait_list), ncol = length(trait_list))
+max_count <- max(count_matrix)
 
-for (m in c(1:length(trait_list))){
-  for (n in c(1:length(trait_list))){
-    if (m == n){
-      heat_matrix[m,n] = 0
-    }else{
-      heat_matrix[m,n] = length(intersect(sample_list[[m]],sample_list[[n]]))    
+# Plot the heatmap with common cell types names
+heatmap_plot <- Heatmap(count_matrix,
+                        cell_fun = function(j, i, x, y, width, height, fill) {
+                          grid.rect(x, y, width - unit(1, "mm"), height - unit(1, "mm"),
+                                    gp = gpar(col = "black", fill = col_fun(count_matrix[i, j])))
+                          if (!is.na(common_matrix[i, j])) {
+                            grid.text(common_matrix[i, j], x, y, gp = gpar(fontsize = 28))
+                          }
+                        },
+                        cluster_rows = FALSE, cluster_columns = FALSE,
+                        name = "Number of Common Cell Types",
+                        col = col_fun,
+                        row_names_side = "left", column_names_side = "top",
+                        show_heatmap_legend = TRUE,
+                        row_names_gp = gpar(fontsize = 28, fontface = "bold"),  # Adjust row names font
+                        column_names_gp = gpar(fontsize = 28, fontface = "bold"),  # Adjust column names font
+                        heatmap_legend_param = list(title = "Common \nCell Types\n",
+                                                    title_gp = gpar(fontsize = 28, fontface = "bold"),
+                                                    at = 0:max_count,  # Adjust legend ticks
+                                                    labels = 0:max_count,
+                                                    labels_gp = gpar(fontsize = 28)))  # Adjust legend title font
+
+
+# Draw the heatmap
+#draw(heatmap_plot)
+
+#Generating Figure 4 for common cell types
+
+#Address of the cell type part of figure 4
+heat_dir = "~/rprojects/review_data/results/new_generated_res_test/traitVStrait_cell.png"
+file.remove(heat_dir)
+png(heat_dir,width = 8400, height = 7300, res = 300)
+#png(heat_dir,width = 12800, height = 8600, res = 300)
+draw(heatmap_plot)
+
+dev.off()
+
+#####################################################################################
+
+df_tf = unique(final_table[,c("TF","trait")])
+
+# Calculate the common TFs between diseases
+disease_tf <- df_tf %>%
+  group_by(trait) %>%
+  summarize(TFs = list(TF)) %>%
+  ungroup()
+
+# Create a matrix to store the names of common TFs
+disease_names <- unique(df_tf$trait)
+common_matrix <- matrix("", nrow = length(disease_names), ncol = length(disease_names))
+rownames(common_matrix) <- disease_names
+colnames(common_matrix) <- disease_names
+
+# Matrix to store the counts of common TFs
+count_matrix <- matrix(0, nrow = length(disease_names), ncol = length(disease_names))
+rownames(count_matrix) <- disease_names
+colnames(count_matrix) <- disease_names
+
+for (i in 1:length(disease_names)) {
+  for (j in 1:length(disease_names)) {
+    if (i < j) {
+      TFs_i <- unlist(disease_tf$TFs[disease_tf$trait == disease_names[i]])
+      TFs_j <- unlist(disease_tf$TFs[disease_tf$trait == disease_names[j]])
+      common_TFs <- intersect(TFs_i, TFs_j)
+      common_matrix[i, j] <- paste(common_TFs, collapse = "\n")
+      common_matrix[j, i] <- common_matrix[i, j]
+      count_matrix[i, j] <- length(common_TFs)
+      count_matrix[j, i] <- length(common_TFs)
     }
   }
-  
 }
 
-rownames(heat_matrix) = trait_list
-colnames(heat_matrix) = trait_list
-
-data_plot = melt(heat_matrix)
-names(data_plot) = c("trait1","trait2","overlap_number")
-
-plot_o = ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of common samples")+
-  #scale_fill_gradient(low="white", high="red")+
-  scale_x_discrete(guide = guide_axis(angle = 90))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
-
-save_file =  "~/rprojects/results/imm_res_back/temp/new_generated_res/traitvstrait_sample.tiff"
-
-file.remove(save_file)
-
-#Generating the figure showing the number of common affected samples 
-#between traits 
-
-ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of common samples")+
-  scale_fill_gradient(low = "#c6dbef",high = "#08306b",guide = "colorbar")+
-  
-  #scale_fill_gradient(low="white", high="red")+
-  scale_x_discrete(guide = guide_axis(angle = 90))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
-
-ggsave(save_file,dpi = 1000)
 
 
+# Replace empty strings with NA for better visualization
+common_matrix[common_matrix == ""] <- NA
 
-cell_list = list()
+# Create a color function for the heatmap
+col_fun <- colorRamp2(c(0, max(count_matrix)), c("white", "red"))
 
-for (i in c(1:length(trait_list))){
-  cell_temp = data[data$trait == trait_list[i],]$cell_type
-  cell_temp = unique(cell_temp)
-  cell_list[[i]] = cell_temp
-}
-#cell_list[[2]] = character(0)
-heat_matrix = matrix(0L ,nrow = length(trait_list), ncol = length(trait_list))
+max_count <- max(count_matrix)
 
-for (m in c(1:length(trait_list))){
-  for (n in c(1:length(trait_list))){
-    if (m == n){
-      heat_matrix[m,n] = 0
-    }else{
-      heat_matrix[m,n] = length(intersect(cell_list[[m]],cell_list[[n]]))    
-    }
-  }
-  
-}
+# Plot the heatmap with common TFs names
+heatmap_plot <- Heatmap(count_matrix,
+                        cell_fun = function(j, i, x, y, width, height, fill) {
+                          grid.rect(x, y, width - unit(1, "mm"), height - unit(1, "mm"),
+                                    gp = gpar(col = "black", fill = col_fun(count_matrix[i, j])))
+                          if (!is.na(common_matrix[i, j])) {
+                            grid.text(common_matrix[i, j], x, y, gp = gpar(fontsize = 28))
+                          }
+                        },
+                        cluster_rows = FALSE, cluster_columns = FALSE,
+                        name = "Number of Common \nTranscription Factors",
+                        col = col_fun,
+                        row_names_side = "left", column_names_side = "top",
+                        show_heatmap_legend = TRUE,
+                        row_names_gp = gpar(fontsize = 28, fontface = "bold"),  # Adjust row names font
+                        column_names_gp = gpar(fontsize = 28, fontface = "bold"),  # Adjust column names font
+                        heatmap_legend_param = list(title = "Common \nTranscription Factors\n",
+                                                    title_gp = gpar(fontsize = 28, fontface = "bold"),
+                                                    at = 0:max_count,  # Adjust legend ticks
+                                                    labels = 0:max_count,
+                                                    labels_gp = gpar(fontsize = 28)))  # Adjust legend title font
 
-rownames(heat_matrix) = trait_list
-colnames(heat_matrix) = trait_list
 
-data_plot = melt(heat_matrix)
-names(data_plot) = c("trait1","trait2","overlap_number")
+# Draw the heatmap
+#draw(heatmap_plot)
 
-plot_o = ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of common cell-types")+
-  #scale_fill_gradient(low="white", high="red")+
-  scale_x_discrete(guide = guide_axis(angle = 90))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
+#Generating Figure 4 for common cell types
 
-save_file =  "~/rprojects/results/imm_res_back/temp/new_generated_res/traitvstrait_cell.tiff"
+#Address of the TF part of figure 4
+heat_dir = "~/rprojects/review_data/results/new_generated_res_test/traitVStrait_TF.png"
+file.remove(heat_dir)
+png(heat_dir,width = 8400, height = 7300, res = 300)
+#png(heat_dir,width = 12800, height = 8600, res = 300)
+draw(heatmap_plot)
 
-file.remove(save_file)
-
-#Generating the figure showing the number of common affected cell types 
-#between traits (Figure 4.B) 
-ggplot(data_plot, aes(trait1, trait2, fill= overlap_number)) + 
-  geom_tile()+
-  xlab("Trait1")+ylab("Trait2")+ggtitle("Number of Common Cell Types")+
-  #scale_fill_gradient(low="white", high="red")+
-  #scale_fill_continuous(breaks = c(0,1,2))+
-  scale_fill_gradient(low = "#c6dbef",high = "#08306b",guide = "colorbar",breaks = c(6:0))+
-  
-  guides(fill=guide_legend(title='Number of Overlapping Cell Types'))+
-  #scale_fill_distiller(palette = "heat") +
-  theme_ipsum() + My_Theme
-
-ggsave(save_file,dpi = 1000)
+dev.off()
